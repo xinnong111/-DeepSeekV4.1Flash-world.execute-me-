@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>world.execute(me); — 代码渲染同人 PV（无音轨版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --fg: #cfe6f5; --dim: #6d8598; --cy: #4fd6ff; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05070c; color: var(--fg);
+    font-family: "Cascadia Mono", Consolas, "Sarasa Mono SC", monospace;
+    overflow: hidden;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    width: 100vw; height: 56.25vw;      /* 16:9 */
+    max-height: 100vh; max-width: 177.78vh;
+    background: #05070c;
+    cursor: pointer;
+  }
+  /* --- 悬浮控制条 --- */
+  #ui {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 14px 18px 16px;
+    background: linear-gradient(to top, rgba(5,7,12,0.92), rgba(5,7,12,0));
+    transition: opacity .5s ease;
+    user-select: none;
+  }
+  #ui.hidden { opacity: 0; pointer-events: none; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .btn {
+    border: 1px solid rgba(79,214,255,0.35);
+    background: rgba(79,214,255,0.07);
+    color: var(--fg); border-radius: 6px;
+    padding: 6px 12px; font: inherit; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn:hover { background: rgba(79,214,255,0.16); }
+  #bar {
+    position: relative; flex: 1; height: 22px;
+    display: flex; align-items: center; cursor: pointer;
+  }
+  #barTrack {
+    position: absolute; left: 0; right: 0; height: 4px;
+    background: rgba(255,255,255,0.1); border-radius: 2px;
+  }
+  #barFill {
+    position: absolute; left: 0; height: 4px; width: 0;
+    background: linear-gradient(90deg, #1d6b8a, #4fd6ff);
+    border-radius: 2px;
+  }
+  #barHead {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; transform: translateX(-50%); box-shadow: 0 0 10px rgba(79,214,255,0.9);
+  }
+  #mark {
+    position: absolute; left: 0; right: 0; height: 22px; pointer-events: none;
+  }
+  #mark i {
+    position: absolute; top: 4px; width: 1px; height: 14px;
+    background: rgba(160,190,210,0.4);
+  }
+  .t { font-size: 12px; color: var(--dim); min-width: 96px; }
+  #hint {
+    font-size: 12px; color: #3d4d5c; margin-top: 8px; line-height: 1.6;
+  }
+  #hint b { color: var(--dim); font-weight: normal; }
+  #title {
+    position: fixed; top: 16px; left: 0; right: 0; text-align: center;
+    font-size: 12px; color: #3d4d5c; letter-spacing: .08em;
+    transition: opacity .5s ease; pointer-events: none;
+  }
+  #title.hidden { opacity: 0; }
+  #nocanvas {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    font-size: 14px; color: #ff3b4e; padding: 40px; line-height: 1.8;
+  }
+  #badge {
+    position: fixed; right: 14px; top: 14px; font-size: 11px;
+    color: #3d4d5c; text-align: right; line-height: 1.7;
+    transition: opacity .5s ease; pointer-events: none;
+  }
+  #badge.hidden { opacity: 0; }
+  kbd {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 4px; padding: 0 4px; font-size: 11px; color: var(--fg);
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="1920" height="1080"></canvas>
+</div>
+
+<div id="title">WORLD.EXECUTE(ME); — 一个进程的一生 · 代码渲染同人 PV · 无音轨版</div>
+<div id="badge">
+  fan-made · non-commercial<br>
+  music: Mili《world.execute(me);》<br>
+  artwork: 100% 程序生成
+</div>
+
+<div id="ui">
+  <div class="row">
+    <button class="btn" id="play">暂停</button>
+    <button class="btn" id="back">« 5s</button>
+    <button class="btn" id="fwd">5s »</button>
+    <div class="t" id="tcode">0:00 / 3:32</div>
+    <div id="bar">
+      <div id="barTrack"></div>
+      <div id="barFill"></div>
+      <div id="mark"></div>
+      <div id="barHead"></div>
+    </div>
+    <div class="t" id="sceneName" style="text-align:right">INIT</div>
+    <button class="btn" id="loadAudio">载入音频…</button>
+    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+    <span class="t" id="audioInfo" style="min-width:auto;color:#3d4d5c">无音轨</span>
+    <button class="btn" id="fs">全屏</button>
+  </div>
+  <div id="hint">
+    <b>空格</b> 播放/暂停 · <b>← →</b> 快退/快进 5s · <b>点击进度条</b> 跳转 · <b>R</b> 重播 ·
+    <b>H</b> 隐藏界面 · <b>F</b> 全屏 &nbsp;|&nbsp;
+    <b>把音频文件直接拖进这个窗口</b>即可载入（或点「载入音频…」）：
+    画面会跟着音频走，自动对齐时长，并在控制台打印实测 BPM 与第一拍位置。
+    音频只在你本机读取，不会被上传。
+  </div>
+</div>
+
+<div id="nocanvas">
+  Canvas 初始化失败或不支持。<br>请使用较新的 Chrome / Edge / Firefox 打开。
+</div>
+
+<!-- 渲染引擎（按依赖顺序加载；纯经典脚本，file:// 直接双击可用）
+     assets.js 是内嵌立绘（约 2.7MB base64），必须在 engine.js 之前加载
+     direction.js 是演出层（镜头/卡拍/角色动作），在 engine.js 之前加载 -->
+<script src="src/theme.js"></script>
+<script src="src/assets.js"></script>
+<script src="src/lyrics.js"></script>
+<script src="src/direction.js"></script>
+<script src="src/visuals.js"></script>
+<script src="src/concepts.js"></script>
+<script src="src/engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  if (!window.WEPV || !window.WEPV.renderFrame) {
+    document.getElementById('nocanvas').style.display = 'flex';
+    return;
+  }
+  var WEPV = window.WEPV, SPEC = WEPV.SPEC;
+
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d', { alpha: false });
+  if (!ctx) { document.getElementById('nocanvas').style.display = 'flex'; return; }
+  var p = new WEPV.Painter(ctx);
+
+  /* ---------------- 播放状态机 ---------------- */
+  var state = {
+    t: 0,                  // 当前时间（秒）
+    playing: true,
+    last: 0,
+    timelineK: 1,          // 音频时长与作品时长的比例（<1 表示音频更长）
+    timelineOffset: 0,     // 音频开头留白时使用
+    tempo: null,           // 节拍检测结果 {bpm, beat, firstBeat}
+    uiVisible: true
+  };
+
+  var el = {
+    ui: document.getElementById('ui'),
+    title: document.getElementById('title'),
+    badge: document.getElementById('badge'),
+    play: document.getElementById('play'),
+    bar: document.getElementById('bar'),
+    fill: document.getElementById('barFill'),
+    head: document.getElementById('barHead'),
+    tcode: document.getElementById('tcode'),
+    sceneName: document.getElementById('sceneName'),
+    mark: document.getElementById('mark')
+  };
+
+  // 进度条上的场景刻度
+  (function buildMarks() {
+    var frag = document.createDocumentFragment();
+    for (var i = 1; i < WEPV.SCENES.length; i++) {
+      var s = document.createElement('i');
+      s.style.left = (WEPV.SCENES[i].t0 / SPEC.DURATION * 100) + '%';
+      frag.appendChild(s);
+    }
+    el.mark.appendChild(frag);
+  })();
+
+  /* ---------------- 音频（可选） ----------------
+   * 载入后由 audio.currentTime 驱动画面时间，天然同步；
+   * 若音频时长与作品时长（212s）不一致，按比例缩放时间轴（k·ct + offset），
+   * 这样用任何版本的音源都能对上画面。音频只在本机读取，不上传。
+   *
+   * 想要"一打开就有音乐"，把下面的 src 改成你机器上的音频路径即可。
+   */
+  var AUDIO_SRC = 'D:/临时/新建文件夹/Mili - world.execute (me) ;.m4a';
+  var audio = null, audioReady = false, audioName = '';
+  var E = WEPV.E;      // 复用引擎的缓动/钳制工具，避免重复实现
+
+  function timeFromAudio() {
+    if (!audioReady || !audio) return state.t;
+    return E.clamp(state.timelineK * audio.currentTime, 0, SPEC.DURATION);
+  }
+
+  function applyAudioMode() {
+    var k = 1, off = 0;
+    if (audioReady && audio && isFinite(audio.duration) && audio.duration > 5) {
+      k = SPEC.DURATION / audio.duration;
+      k = Math.max(0.5, Math.min(2.0, k));       // 只在 0.5x~2x 内自动缩放，避免异常时长把画面压扁
+    }
+    state.timelineK = k;
+    state.timelineOffset = off;
+    state.t = E.clamp(k * (audioReady && audio ? audio.currentTime : 0), 0, SPEC.DURATION);
+    if (audioReady && audio && audio.paused !== !state.playing) {
+      if (state.playing) { var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      else audio.pause();
+    }
+  }
+
+  function setPlaying(v) {
+    state.playing = v;
+    el.play.textContent = v ? '暂停' : '播放';
+    if (audioReady && audio) {
+      if (v) { var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      else audio.pause();
+    }
+  }
+
+  function loadAudioFile(file) {
+    if (!file) return;
+    try {
+      audio = new Audio();
+      audio.preload = 'auto';
+      audio.src = URL.createObjectURL(file);
+      attachAudioEvents(file.name);
+    } catch (e) {
+      el.audioInfo.textContent = '音频初始化失败';
+      el.audioInfo.style.color = '#ff3b4e';
+    }
+  }
+
+  /* 音频事件与"时长对齐"逻辑（文件与路径两种载入方式共用） */
+  function attachAudioEvents(displayName) {
+    var wasPlaying = state.playing;
+    audio.addEventListener('loadedmetadata', function () {
+      audioReady = true;
+      audioName = displayName;
+      state.timelineK = (isFinite(audio.duration) && audio.duration > 5)
+        ? E.clamp(SPEC.DURATION / audio.duration, 0.5, 2.0) : 1;
+      el.audioInfo.textContent = '♪ ' + displayName.slice(0, 22)
+        + '  ' + audio.duration.toFixed(1) + 's'
+        + (Math.abs(audio.duration - SPEC.DURATION) > 0.6
+            ? '  (已按 ' + state.timelineK.toFixed(2) + '× 对齐)' : '');
+      el.audioInfo.style.color = '#4fd6ff';
+      setPlaying(wasPlaying);
+      // 顺便在后台跑一次节拍检测（结果只打印到控制台，供人工核对）
+      detectTempo();
+    });
+    audio.addEventListener('ended', function () { setPlaying(false); });
+    audio.addEventListener('error', function () {
+      audioReady = false;
+      el.audioInfo.textContent = '音频读取失败（路径或格式问题）';
+      el.audioInfo.style.color = '#ff3b4e';
+    });
+  }
+
+  /* ---------------- 节拍检测（纯 Web Audio，不需要任何依赖） ----------------
+   * 卡点必须基于音频的真实节拍，而不是"假设 130 BPM"。
+   * 做法：解码成单声道 → 算能量包络 → 对包络做自相关 → 取 70~180 BPM 内的
+   * 最强周期；再用相位搜索定位第一拍。结果打印到控制台并挂到
+   * __WEPV_PLAYER__.tempo，方便把真实拍点写回 lyrics/direction。 */
+  function detectTempo() {
+    if (!audio || state.tempo) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    var ctx;
+    try { ctx = new AC(); } catch (e) { return; }
+    fetch(audio.src).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      return ctx.decodeAudioData(buf);
+    }).then(function (decoded) {
+      var sr = decoded.sampleRate;
+      var n = decoded.length;
+      var ch = decoded.getChannelData(0);
+      // 1) 能量包络：10ms 一格的 RMS
+      var hop = Math.max(1, Math.round(sr * 0.01));
+      var frames = Math.floor(n / hop);
+      var env = new Float32Array(frames);
+      for (var i = 0; i < frames; i++) {
+        var sum = 0, base = i * hop;
+        for (var k = 0; k < hop; k += 4) { var v = ch[base + k]; sum += v * v; }
+        env[i] = Math.sqrt(sum / (hop / 4));
+      }
+      // 2) 去均值 + 半波整流（只保留"有声音"的起音）
+      var mean = 0;
+      for (var j = 0; j < frames; j++) mean += env[j];
+      mean /= Math.max(1, frames);
+      var onset = new Float32Array(frames);
+      for (var q = 1; q < frames; q++) {
+        var d = env[q] - env[q - 1];
+        onset[q] = d > 0 ? d : 0;
+      }
+      // 3) 自相关，在 70~180 BPM 找最强周期
+      var fps = 100;                       // 包络每秒 100 格
+      var lo = fps * 60 / 180, hi = fps * 60 / 70;
+      var best = 0, bestLag = 0;
+      for (var lag = Math.floor(lo); lag <= Math.ceil(hi); lag++) {
+        var acc = 0;
+        for (var t2 = 0; t2 + lag < frames; t2++) acc += onset[t2] * onset[t2 + lag];
+        acc /= (frames - lag);
+        if (acc > best) { best = acc; bestLag = lag; }
+      }
+      var bpm = bestLag ? (60 * fps / bestLag) : 0;
+      // 4) 相位搜索：让拍点尽量落在能量的峰值上
+      var bestPhase = 0, bestScore = -1;
+      for (var ph = 0; ph < bestLag; ph++) {
+        var sc = 0;
+        for (var t3 = ph; t3 < frames; t3 += bestLag) sc += onset[t3];
+        if (sc > bestScore) { bestScore = sc; bestPhase = ph; }
+      }
+      var firstBeat = bestPhase / fps;
+      state.tempo = {
+        bpm: Math.round(bpm * 10) / 10,
+        beat: 60 / bpm,
+        firstBeat: Math.round(firstBeat * 1000) / 1000,
+        duration: decoded.duration,
+        sampleRate: sr
+      };
+      console.log('[tempo] BPM=' + state.tempo.bpm
+        + '  每拍=' + state.tempo.beat.toFixed(4) + 's'
+        + '  第一拍≈' + state.tempo.firstBeat + 's'
+        + '  时长=' + state.tempo.duration.toFixed(3) + 's');
+      el.audioInfo.textContent += '   ♪' + state.tempo.bpm + 'BPM';
+    }).catch(function (e) {
+      console.log('[tempo] 检测失败：' + (e && e.message ? e.message : e));
+    });
+  }
+
+  /* 若配置了 AUDIO_SRC，直接按路径载入（file:// 下一般可用） */
+  function loadAudioPath(src) {
+    try {
+      audio = new Audio();
+      audio.preload = 'auto';
+      audio.crossOrigin = 'anonymous';
+      audio.src = src;
+      attachAudioEvents(src.split('/').pop().split('\\').pop());
+    } catch (e) { /* 忽略：file:// 下某些浏览器会拒绝 */ }
+  }
+
+  function seek(t) {
+    t = Math.max(0, Math.min(SPEC.DURATION, t));
+    state.t = t;
+    state.last = performance.now();
+    if (audioReady && audio && isFinite(audio.duration)) {
+      try { audio.currentTime = t / Math.max(0.01, state.timelineK); } catch (e) {}
+    }
+    renderOnce();
+  }
+
+  function uiFade() {
+    el.ui.classList.toggle('hidden', !state.uiVisible);
+    el.title.classList.toggle('hidden', !state.uiVisible);
+    el.badge.classList.toggle('hidden', !state.uiVisible);
+  }
+
+  function updateBar() {
+    var k = state.t / SPEC.DURATION;
+    el.fill.style.width = (k * 100) + '%';
+    el.head.style.left = (k * 100) + '%';
+    el.tcode.textContent = WEPV.formatTime(state.t) + ' / ' + WEPV.formatTime(SPEC.DURATION);
+    var sc = WEPV.SCENES[0];
+    for (var i = 0; i < WEPV.SCENES.length; i++) if (state.t >= WEPV.SCENES[i].t0) sc = WEPV.SCENES[i];
+    el.sceneName.textContent = sc.label;
+  }
+
+  /* ---------------- 渲染 ---------------- */
+  var cachedState = null, cachedT = -1;
+  function renderOnce() {
+    // 同一时间点重复调用（如 seek 后紧接 rAF）时可以复用状态
+    if (Math.abs(state.t - cachedT) > 1e-6 || !cachedState) {
+      cachedState = WEPV.computeState(state.t);
+      cachedT = state.t;
+    }
+    WEPV.renderFrame(p, state.t, cachedState);
+    updateBar();
+  }
+
+  function loop(now) {
+    if (!state.last) state.last = now;
+    var dt = (now - state.last) / 1000;
+    state.last = now;
+    if (dt > 0.25) dt = 0.25;          // 切标签页回来不要跳帧
+
+    if (audioReady && audio) {
+      // 有音频：时间完全由音频决定（seek 与播放都不需要额外同步）
+      state.t = E.clamp(state.timelineK * audio.currentTime + state.timelineOffset,
+                        0, SPEC.DURATION);
+    } else if (state.playing) {
+      state.t += dt;
+      if (state.t >= SPEC.DURATION) { state.t = SPEC.DURATION; setPlaying(false); }
+    }
+
+    cachedState = WEPV.computeState(state.t);
+    cachedT = state.t;
+    WEPV.renderFrame(p, state.t, cachedState);
+    updateBar();
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------------- 交互 ---------------- */
+  el.play.addEventListener('click', function () { setPlaying(!state.playing); });
+  document.getElementById('loadAudio').addEventListener('click', function () {
+    document.getElementById('audioFile').click();
+  });
+  document.getElementById('audioFile').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (f) loadAudioFile(f);
+  });
+  document.getElementById('back').addEventListener('click', function () { seek(state.t - 5); });
+  document.getElementById('fwd').addEventListener('click', function () { seek(state.t + 5); });
+  document.getElementById('fs').addEventListener('click', function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
+
+  function barSeek(ev) {
+    var r = el.bar.getBoundingClientRect();
+    var k = (ev.clientX - r.left) / r.width;
+    seek(k * SPEC.DURATION);
+  }
+  var dragging = false;
+  el.bar.addEventListener('pointerdown', function (e) {
+    dragging = true; el.bar.setPointerCapture(e.pointerId); barSeek(e);
+  });
+  el.bar.addEventListener('pointermove', function (e) { if (dragging) barSeek(e); });
+  el.bar.addEventListener('pointerup', function (e) {
+    dragging = false; try { el.bar.releasePointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  cv.addEventListener('click', function () { setPlaying(!state.playing); });
+
+  /* ---------------- 拖放载入音频 ----------------
+   * 为什么加这个：用户从音乐客户端拿到的文件可能躺在任意缓存目录里，
+   * 直接拖进来最省事，也不用改任何路径配置。 */
+  function onDropFiles(files) {
+    if (!files || !files.length) return;
+    var f = files[0];
+    if (!/^audio\//.test(f.type) && !/\.(mp3|wav|flac|m4a|ogg|aac|opus)$/i.test(f.name)) {
+      el.audioInfo.textContent = '拖入的不是音频文件';
+      el.audioInfo.style.color = '#ff3b4e';
+      return;
+    }
+    loadAudioFile(f);
+  }
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      e.preventDefault();
+      document.body.style.outline = '2px solid #4fd6ff';
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      e.preventDefault();
+      document.body.style.outline = '';
+    });
+  });
+  document.addEventListener('drop', function (e) {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files) onDropFiles(e.dataTransfer.files);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === ' ') { e.preventDefault(); setPlaying(!state.playing); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); seek(state.t - 5); }
+    else if (k === 'ArrowRight') { e.preventDefault(); seek(state.t + 5); }
+    else if (k === 'r' || k === 'R') { seek(0); setPlaying(true); }
+    else if (k === 'h' || k === 'H') { state.uiVisible = !state.uiVisible; uiFade(); }
+    else if (k === 'f' || k === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  });
+
+  // 3 秒无操作后自动隐藏标题/角标（控制条保留，直到按 H 或鼠标离开）
+  var hideTimer = setTimeout(function () {
+    el.title.classList.add('hidden');
+    el.badge.classList.add('hidden');
+  }, 4000);
+  document.addEventListener('mousemove', function () {
+    el.title.classList.remove('hidden');
+    el.badge.classList.remove('hidden');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+      el.title.classList.add('hidden');
+      el.badge.classList.add('hidden');
+    }, 4000);
+  });
+
+  /* ---------------- 启动 ---------------- */
+  renderOnce();
+  requestAnimationFrame(loop);
+
+  // 方便自动化/调试
+  window.__WEPV_PLAYER__ = {
+    seek: seek, state: state, spec: SPEC,
+    renderAt: function (t) { state.t = t; renderOnce(); },
+    pause: function () { setPlaying(false); },
+    // 供外部脚本/导出工具使用
+    loadAudioFile: loadAudioFile,
+    loadAudioPath: loadAudioPath,
+    detectTempo: detectTempo,
+    getAudio: function () { return audio; },
+    audioReady: function () { return audioReady; }
+  };
+
+  /* 若配置了 AUDIO_SRC，启动即载入 */
+  if (AUDIO_SRC) loadAudioPath(AUDIO_SRC);
+})();
+</script>
+</body>
+</html>
